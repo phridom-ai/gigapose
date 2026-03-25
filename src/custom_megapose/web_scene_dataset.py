@@ -119,7 +119,7 @@ class WebSceneDataset(SceneDataset):
         self,
         wds_dir: Path,
         depth_scale: float = 1000.0,
-        load_depth: bool = True,
+        load_depth: bool = False,
         load_segmentation: bool = True,
         label_format: str = "{label}",
         load_frame_index: bool = False,

@@ -410,24 +410,8 @@ def load_test_list_and_cnos_detections(
     else:
     - No sorting techniques since target_objects is not available
     """
-    # load cnos detections
-    if dataset_name in ["lmo", "tless", "tudl", "icbin", "itodd", "hb", "ycbv"]:
-        year = "19"
-        det_model = "cnos-fastsam"
-    elif dataset_name in ["hope"]:
-        year = "24"
-        det_model = "cnos-sam"
-    else:
-        raise NotImplementedError(
-            f"Dataset {dataset_name} is not supported with default detections!"
-        )
-    cnos_dets_dir = (
-        root_dir / "default_detections" / f"core{year}_model_based_unseen/" / det_model
-    )
-    # list all detections and take the one matching the dataset_name
-    avail_det_files = os.listdir(cnos_dets_dir)
-    cnos_dets_path = [file for file in avail_det_files if dataset_name in file][0]
-    all_cnos_dets = inout.load_json(os.path.join(cnos_dets_dir, cnos_dets_path))
+    year, cnos_dets_path = _resolve_default_detection_path(root_dir, dataset_name)
+    all_cnos_dets = inout.load_json(cnos_dets_path)
 
     # sort by image_id
     all_cnos_dets_per_image = group_by_image_level(all_cnos_dets, image_key="image_id")
@@ -490,6 +474,69 @@ def load_test_list_and_cnos_detections(
         return test_list, selected_detections
     else:
         raise NotImplementedError(f"Test setting {test_setting} is not supported!")
+
+
+def _resolve_default_detection_path(root_dir, dataset_name):
+    default_detections_root = root_dir / "default_detections"
+    direct_match = _find_custom_default_detection(default_detections_root, dataset_name)
+    if direct_match is not None:
+        return direct_match
+
+    if dataset_name in ["lmo", "tless", "tudl", "icbin", "itodd", "hb", "ycbv"]:
+        year = "19"
+        det_model = "cnos-fastsam"
+    elif dataset_name in ["hope"]:
+        year = "24"
+        det_model = "cnos-sam"
+    elif dataset_name == "my_objects":
+        year = "19"  # Doesn't matter for custom datasets
+        det_model = "my_objects"
+    else:
+        raise NotImplementedError(
+            f"Dataset {dataset_name} is not supported with default detections! "
+            f"Expected either a built-in dataset or a matching folder under {default_detections_root}."
+        )
+
+    cnos_dets_dir = (
+        root_dir / "default_detections" / f"core{year}_model_based_unseen" / det_model
+    )
+    avail_det_files = os.listdir(cnos_dets_dir)
+    matches = [file for file in avail_det_files if dataset_name in file]
+    if not matches:
+        raise FileNotFoundError(
+            f"No default detection file for dataset '{dataset_name}' in {cnos_dets_dir}"
+        )
+    return year, cnos_dets_dir / matches[0]
+
+
+def _find_custom_default_detection(default_detections_root, dataset_name):
+    if not default_detections_root.exists():
+        return None
+
+    for candidate_root in sorted(default_detections_root.glob("core*_model_based_unseen")):
+        dataset_dir = candidate_root / dataset_name
+        if not dataset_dir.is_dir():
+            continue
+
+        json_candidates = sorted(dataset_dir.glob("*.json"))
+        if not json_candidates:
+            continue
+
+        preferred = [path for path in json_candidates if dataset_name in path.name]
+        selected = preferred[0] if preferred else json_candidates[0]
+
+        candidate_name = candidate_root.name
+        year = candidate_name[4:].split("_", 1)[0]
+        if not year.isdigit():
+            raise ValueError(
+                f"Could not parse default-detection year from directory name '{candidate_name}'"
+            )
+        logger.info(
+            f"Using custom default detections for dataset={dataset_name} from {selected}"
+        )
+        return year, selected
+
+    return None
 
 
 def load_test_list_and_init_locs(root_dir, dataset_name, init_loc_path, test_setting):

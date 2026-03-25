@@ -79,6 +79,7 @@ def render(cfg) -> None:
     cad_dir = root_dir / dataset_name / "models"
 
     cad_paths = list(cad_dir.glob("*.ply"))
+
     cad_paths += list(cad_dir.glob("*.obj"))
     logger.info(f"Found {len(list(cad_paths))} objects in {cad_dir}")
     logger.info(f"Found {len(list(cad_paths))} objects")

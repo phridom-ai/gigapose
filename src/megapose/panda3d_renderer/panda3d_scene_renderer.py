@@ -204,7 +204,8 @@ class Panda3dSceneRenderer:
         scale = asset.scaling_factor_mesh_units_to_meters * asset.scaling_factor
         y, p, r = asset.ypr_offset_deg
 
-        node = self._app.loader.load_model(str(asset.mesh_path), noCache=True)
+        absolute_mesh_path = os.path.abspath(asset.mesh_path)
+        node = self._app.loader.load_model(str(absolute_mesh_path), noCache=True)
         node.setScale(scale)
         node.setPos(0, 0, 0)
         node.setHpr(y, p, r)
