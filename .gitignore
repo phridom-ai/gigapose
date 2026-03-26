@@ -15,6 +15,7 @@ huggingface/
 tmp/
 .empty/
 gigaPose_datasets/
+raw_data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
