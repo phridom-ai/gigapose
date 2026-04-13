@@ -318,15 +318,29 @@ def parse_csv_line(line):
     }
 
 
+def load_scene_camera(camera_json_path):
+    with open(camera_json_path, "r") as f:
+        return json.load(f)
+
+
+def resolve_scene_paths(dataset_root, scene_id):
+    scene_dir = Path(dataset_root) / "test" / f"{scene_id:06d}"
+    images_dir = scene_dir / "rgb"
+    camera_json_path = scene_dir / "scene_camera.json"
+    return scene_dir, images_dir, camera_json_path
+
+
 def visualize_poses(
     csv_path,
     images_dir,
     models_dir,
     camera_json_path,
     output_dir,
+    dataset_root=None,
     detections_json_path=None,
     calibration_pkl_path=None,
     camera_serial=None,
+    model_scale=1.0,
     score_threshold=0.0,
     vis_type='bbox',  # 'bbox', 'wireframe', 'axes', 'all'
     max_images=None,
@@ -347,12 +361,8 @@ def visualize_poses(
     """
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Load camera intrinsics
-    print(f"Loading camera intrinsics from {camera_json_path}")
-    with open(camera_json_path, 'r') as f:
-        camera_data = json.load(f)
-    
+    scene_camera_cache = {}
+
     distortion_coeffs = None
     calibration_K = None
     if calibration_pkl_path:
@@ -367,6 +377,8 @@ def visualize_poses(
     for model_file in Path(models_dir).glob("*.ply"):
         obj_id = int(model_file.stem.replace('obj_', ''))
         models[obj_id] = load_ply_model(str(model_file))
+        if model_scale != 1.0:
+            models[obj_id] = models[obj_id] * float(model_scale)
         print(f"  Loaded object {obj_id}: {len(models[obj_id])} vertices")
 
     detection_bboxes = {}
@@ -385,30 +397,46 @@ def visualize_poses(
                 predictions.append(pred)
     
     print(f"Found {len(predictions)} predictions (score >= {score_threshold})")
-    
-    # Group predictions by image
+
+    # Group predictions by scene/image pair.
     image_predictions = {}
     for pred in predictions:
-        im_id = pred['im_id']
-        if im_id not in image_predictions:
-            image_predictions[im_id] = []
-        image_predictions[im_id].append(pred)
-    
-    print(f"Processing {len(image_predictions)} images")
-    
+        image_key = (pred['scene_id'], pred['im_id'])
+        if image_key not in image_predictions:
+            image_predictions[image_key] = []
+        image_predictions[image_key].append(pred)
+
+    print(f"Processing {len(image_predictions)} scene/image pairs")
+
     # Process each image
     processed = 0
-    for im_id in tqdm(sorted(image_predictions.keys())):
+    for scene_id, im_id in tqdm(sorted(image_predictions.keys())):
         if max_images and processed >= max_images:
             break
-        
+
+        if dataset_root:
+            _, current_images_dir, current_camera_json_path = resolve_scene_paths(dataset_root, scene_id)
+            if scene_id not in scene_camera_cache:
+                print(f"Loading camera intrinsics from {current_camera_json_path}")
+                scene_camera_cache[scene_id] = load_scene_camera(current_camera_json_path)
+            camera_data = scene_camera_cache[scene_id]
+            scene_output_dir = Path(output_dir) / f"{scene_id:06d}"
+            scene_output_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            current_images_dir = Path(images_dir)
+            if "default" not in scene_camera_cache:
+                print(f"Loading camera intrinsics from {camera_json_path}")
+                scene_camera_cache["default"] = load_scene_camera(camera_json_path)
+            camera_data = scene_camera_cache["default"]
+            scene_output_dir = Path(output_dir)
+
         # Load image
-        image_path = os.path.join(images_dir, f"{im_id:06d}.jpg")
+        image_path = os.path.join(current_images_dir, f"{im_id:06d}.jpg")
         if not os.path.exists(image_path):
-            image_path = os.path.join(images_dir, f"{im_id:06d}.png")
+            image_path = os.path.join(current_images_dir, f"{im_id:06d}.png")
         
         if not os.path.exists(image_path):
-            print(f"Warning: Image {im_id:06d} not found, skipping")
+            print(f"Warning: Image {scene_id:06d}/{im_id:06d} not found, skipping")
             continue
         
         image = cv2.imread(image_path)
@@ -426,7 +454,7 @@ def visualize_poses(
             )
         
         # Overlay each prediction
-        for pred_idx, pred in enumerate(image_predictions[im_id]):
+        for pred_idx, pred in enumerate(image_predictions[(scene_id, im_id)]):
             obj_id = pred['obj_id']
             R = pred['R']
             t = pred['t']
@@ -481,7 +509,10 @@ def visualize_poses(
             )
         
         # Save visualization
-        output_path = os.path.join(output_dir, f"{im_id:06d}_pose.jpg")
+        if dataset_root:
+            output_path = scene_output_dir / f"{im_id:06d}_pose.jpg"
+        else:
+            output_path = scene_output_dir / f"{im_id:06d}_pose.jpg"
         cv2.imwrite(output_path, image)
         
         processed += 1
@@ -517,6 +548,11 @@ if __name__ == "__main__":
         help="Output directory for visualizations"
     )
     parser.add_argument(
+        "--dataset_root",
+        default=None,
+        help="Dataset root with test/<scene_id>/rgb and scene_camera.json for multi-scene visualization"
+    )
+    parser.add_argument(
         "--calibration_pkl",
         default=None,
         help="Optional path to systemCalibration.pkl for distortion-aware projection"
@@ -536,6 +572,12 @@ if __name__ == "__main__":
         type=float,
         default=0.0,
         help="Minimum score to visualize (default: 0.0)"
+    )
+    parser.add_argument(
+        "--model_scale",
+        type=float,
+        default=1.0,
+        help="Scale factor applied to model vertices before projection (default: 1.0)"
     )
     parser.add_argument(
         "--vis_type",
@@ -563,9 +605,11 @@ if __name__ == "__main__":
         models_dir=args.models_dir,
         camera_json_path=args.camera_json,
         output_dir=args.output_dir,
+        dataset_root=args.dataset_root,
         detections_json_path=args.detections_json,
         calibration_pkl_path=args.calibration_pkl,
         camera_serial=args.camera_serial,
+        model_scale=args.model_scale,
         score_threshold=args.score_threshold,
         vis_type=args.vis_type,
         max_images=args.max_images,

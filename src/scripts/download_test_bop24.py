@@ -15,9 +15,9 @@ def run_download(config: DictConfig) -> None:
     )
     logger.info(f"Saving dataset to {local_dir}")
 
-    download_cmd = f"huggingface-cli download bop-benchmark/datasets --include {config.test_dataset_name}/* --exclude *train_pbr* --local-dir {config.data.test.dataloader.root_dir} --repo-type=dataset"
+    download_cmd = f"hf download bop-benchmark/hope --include \"*.zip\" --exclude *train_pbr* --local-dir {config.data.test.dataloader.root_dir} --repo-type=dataset"
     logger.info(f"Running {download_cmd}")
-    os.system(download_cmd)
+    # os.system(download_cmd)
     logger.info(f"Dataset downloaded to {local_dir}")
 
     # unzip the dataset

@@ -76,6 +76,9 @@ class GigaPose(pl.LightningModule):
 
         logger.info("Initialize GigaPose done!")
 
+    def should_log(self, idx_batch):
+        return self.log_interval is not None and self.log_interval > 0 and idx_batch % self.log_interval == 0
+
     def warm_up_lr(self):
         for optim in self.trainer.optimizers:
             for idx_group, pg in enumerate(optim.param_groups):
@@ -271,7 +274,7 @@ class GigaPose(pl.LightningModule):
         for idx_dataset, batch in enumerate(batchs):
             if batch is None:
                 continue
-            if idx_batch % self.log_interval == 0:
+            if self.should_log(idx_batch):
                 vis_pts = plot_keypoints_batch(batch)
                 sample_path = f"{self.log_dir}/sample_rank{self.global_rank}.png"
                 save_tensor_to_image(vis_pts, sample_path)
@@ -612,7 +615,7 @@ class GigaPose(pl.LightningModule):
         selected_idxs, predictions = self.filter_and_save(
             predictions, test_list=batch.test_list, time=total_time, save_path=save_path
         )
-        if idx_batch % self.log_interval == 0 and self.max_num_dets_per_forward is None:
+        if self.should_log(idx_batch) and self.max_num_dets_per_forward is None:
             vis_img = self.vis_retrieval(
                 template_data=template_data,
                 batch=batch,
