@@ -112,7 +112,7 @@ class GigaPoseTestSet(GigaPoseTrainSet):
             max_det_per_object_id=max_det_per_object_id,
         )
 
-    def load_init_loc(self, init_loc_path, test_setting, min_score=0.25):
+    def load_init_loc(self, init_loc_path, test_setting, min_score=0.20):
         (
             self.test_list,
             self.init_locs,
